@@ -1,6 +1,8 @@
 module com.example.medmap {
     requires javafx.controls;
     requires javafx.fxml;
+    requires javafx.web;
+
 
     exports com.example.medmap.model;
     exports com.example.medmap.algo;
@@ -10,4 +12,6 @@ module com.example.medmap {
     opens com.example.medmap to javafx.fxml;
 
     exports com.example.medmap;
+    
+    exports application ;
 }
