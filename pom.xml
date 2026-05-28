@@ -38,15 +38,15 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
-        
+
         <dependency>
-    <groupId>org.openjfx</groupId>
-    <artifactId>javafx-web</artifactId>
-    <version>21</version>
-</dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-web</artifactId>
+            <version>21</version>
+        </dependency>
     </dependencies>
-    
-    
+
+
 
     <build>
         <plugins>
@@ -68,7 +68,7 @@
                         <!-- Default configuration for running with: mvn clean javafx:run -->
                         <id>default-cli</id>
                         <configuration>
-                            <mainClass>com.example.medmap/com.example.medmap.HelloApplication</mainClass>
+                            <mainClass>com.example.medmap/com.example.medmap.MedMapApplication</mainClass>
                             <launcher>app</launcher>
                             <jlinkZipName>app</jlinkZipName>
                             <jlinkImageName>app</jlinkImageName>
