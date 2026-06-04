@@ -22,11 +22,11 @@ import java.util.List;
 
 public class MapView extends Pane {
     // constantes
-    private static final int    ZOOM  = 13;
+    private int zoom = 13;
     private static final double MAP_W = 900;
     private static final double MAP_H = 700;
 
-    // canva
+    // canvas
     private final Canvas tileCanvas    = new Canvas(MAP_W, MAP_H);
     private final Canvas overlayCanvas = new Canvas(MAP_W, MAP_H);
 
@@ -47,34 +47,82 @@ public class MapView extends Pane {
         setPrefSize(MAP_W, MAP_H);
         getChildren().addAll(tileCanvas, overlayCanvas);
 
+        setupZoomHandler();
+
         computeOffset();
         computeScreenCoords();
         loadTiles();
         drawOverlay();
     }
 
-    //  projection
+    // active le zoom / dézoom avec la molette de la souris
+    private void setupZoomHandler() {
+        setOnScroll(event -> {
+            if (event.getDeltaY() > 0) {
+                changeZoomAtMouse(1, event.getX(), event.getY());
+            } else if (event.getDeltaY() < 0) {
+                changeZoomAtMouse(-1, event.getX(), event.getY());
+            }
 
-    // centre la carte sur le barycentre des médecins.
+            event.consume();
+        });
+    }
+
+    // change le niveau de zoom en gardant le point sous la souris au même endroit
+    private void changeZoomAtMouse(int delta, double mouseX, double mouseY) {
+        int oldZoom = zoom;
+        int newZoom = zoom + delta;
+
+        // limites raisonnables pour éviter de trop charger les tuiles
+        if (newZoom < 11 || newZoom > 16) {
+            return;
+        }
+
+        // coordonnées monde du point sous la souris avant zoom
+        double worldXBeforeZoom = offsetX + mouseX;
+        double worldYBeforeZoom = offsetY + mouseY;
+
+        // facteur entre deux niveaux de zoom OpenStreetMap
+        double scale = Math.pow(2, newZoom - oldZoom);
+
+        // coordonnées monde du même point après zoom
+        double worldXAfterZoom = worldXBeforeZoom * scale;
+        double worldYAfterZoom = worldYBeforeZoom * scale;
+
+        zoom = newZoom;
+
+        // nouvel offset pour garder le même point sous la souris
+        offsetX = worldXAfterZoom - mouseX;
+        offsetY = worldYAfterZoom - mouseY;
+
+        // recalcul des positions écran
+        screenCoords.clear();
+        computeScreenCoords();
+
+        // recharge et redessine
+        loadTiles();
+        drawOverlay();
+    }
+
+    // centre la carte sur le barycentre des médecins
     private void computeOffset() {
         double avgLat = doctors.stream().mapToDouble(Doctor::getLat).average().orElse(49.0369);
         double avgLng = doctors.stream().mapToDouble(Doctor::getLng).average().orElse(2.0778);
 
-        offsetX = MapProjection.lngToPixelX(avgLng, ZOOM) - MAP_W / 2.0;
-        offsetY = MapProjection.latToPixelY(avgLat, ZOOM) - MAP_H / 2.0;
+        offsetX = MapProjection.lngToPixelX(avgLng, zoom) - MAP_W / 2.0;
+        offsetY = MapProjection.latToPixelY(avgLat, zoom) - MAP_H / 2.0;
     }
 
-    // convertit les coordonnées GPS de chaque médecin en pixels écran.
+    // convertit les coordonnées GPS de chaque médecin en pixels écran
     private void computeScreenCoords() {
         for (Doctor d : doctors) {
-            double sx = MapProjection.lngToPixelX(d.getLng(), ZOOM) - offsetX;
-            double sy = MapProjection.latToPixelY(d.getLat(), ZOOM) - offsetY;
+            double sx = MapProjection.lngToPixelX(d.getLng(), zoom) - offsetX;
+            double sy = MapProjection.latToPixelY(d.getLat(), zoom) - offsetY;
             screenCoords.add(new double[]{sx, sy});
         }
     }
 
-    //  chargement des tuiles OSM
-
+    // chargement des tuiles OSM
     private void loadTiles() {
         GraphicsContext gc = tileCanvas.getGraphicsContext2D();
 
@@ -91,9 +139,9 @@ public class MapView extends Pane {
             for (int ty = tyStart; ty <= tyEnd; ty++) {
                 final double drawX = tx * MapProjection.TILE_SIZE - offsetX;
                 final double drawY = ty * MapProjection.TILE_SIZE - offsetY;
-                final String url = "https://tile.openstreetmap.org/" + ZOOM + "/" + tx + "/" + ty + ".png";
+                final String url = "https://tile.openstreetmap.org/" + zoom + "/" + tx + "/" + ty + ".png";
 
-                // thread dédié : HttpURLConnection avec User-Agent valide (exigé par OSM)
+                // thread dédié : HttpURLConnection avec User-Agent valide exigé par OSM
                 Thread t = new Thread(() -> {
                     try {
                         HttpURLConnection conn = (HttpURLConnection) new URI(url).toURL().openConnection();
@@ -104,7 +152,8 @@ public class MapView extends Pane {
 
                         try (InputStream is = conn.getInputStream()) {
                             Image tile = new Image(is);
-                            // Retour sur le thread JavaFX pour dessiner
+
+                            // retour sur le thread JavaFX pour dessiner
                             Platform.runLater(() -> {
                                 gc.drawImage(tile, drawX, drawY,
                                         MapProjection.TILE_SIZE, MapProjection.TILE_SIZE);
@@ -112,7 +161,7 @@ public class MapView extends Pane {
                             });
                         }
                     } catch (Exception e) {
-                        // tuile inaccessible
+                        // tuile inaccessible : on ignore pour garder l'application stable
                     }
                 });
                 t.setDaemon(true);
@@ -121,8 +170,7 @@ public class MapView extends Pane {
         }
     }
 
-    //  dessine overlay
-
+    // dessine l'overlay
     private void drawOverlay() {
         GraphicsContext gc = overlayCanvas.getGraphicsContext2D();
         gc.clearRect(0, 0, MAP_W, MAP_H);
@@ -179,7 +227,7 @@ public class MapView extends Pane {
             gc.setFill(c.deriveColor(0, 1, 1, 0.20));
             gc.fillPolygon(xs, ys, poly.length);
 
-            // Contour de la cellule
+            // contour de la cellule
             gc.setStroke(c.deriveColor(0, 1, 0.7, 0.80));
             gc.setLineWidth(1.8);
             gc.strokePolygon(xs, ys, poly.length);
@@ -196,10 +244,11 @@ public class MapView extends Pane {
             gc.strokeLine(edge[0].getX(), edge[0].getY(),
                     edge[1].getX(), edge[1].getY());
         }
+
         gc.setLineDashes(); // reset tirets
     }
 
-    // dessine les cellules sur gmap
+    // dessine les marqueurs des médecins
     private void drawMarkers(GraphicsContext gc) {
         gc.setFont(Font.font("System", FontWeight.BOLD, 11));
 
@@ -226,8 +275,6 @@ public class MapView extends Pane {
             gc.fillText(name, sx + 14, sy + 3);
         }
     }
-
-    //  utilitaires
 
     // vérifie qu'aucun sommet du polygone n'a de coordonnées invalides
     private boolean hasInvalidCoords(Point[] poly) {
