@@ -4,9 +4,12 @@ import com.example.medmap.algo.DelaunayVoronoi;
 import com.example.medmap.model.Doctor;
 import com.example.medmap.model.DoctorData;
 import com.example.medmap.model.Point;
+import com.example.medmap.utils.ConsoleLogger;
 import javafx.application.Platform;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.Button;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.image.Image;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
@@ -19,6 +22,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 public class MapView extends Pane {
     // constantes
@@ -35,27 +39,170 @@ public class MapView extends Pane {
     private final List<double[]> screenCoords = new ArrayList<>();
     private final List<Color>    palette;
 
-    // décalage
+    // variables interface et analyse
+    private Doctor selectedDoctor = null;
+    private double maxVertexDistanceKm = 0.0;
+    private Point furthestVertex = null;
+    private double selectedDocX = -1;
+    private double selectedDocY = -1;
+    private final double SEUIL_VIDE_ABSOLU_KM = 3.5;
+
+    // déplacement et ajout
+    private double lastMouseX;
+    private double lastMouseY;
+    private boolean isAddMode = false;
+    private Button addModeBtn;
+
     private double offsetX;
     private double offsetY;
 
     // constructeur
     public MapView() {
-        doctors = DoctorData.getCergyDoctors();
+        doctors = new ArrayList<>(DoctorData.getCergyDoctors());
         palette = buildPalette(doctors.size());
 
         setPrefSize(MAP_W, MAP_H);
-        getChildren().addAll(tileCanvas, overlayCanvas);
+
+        setupUI();
+        getChildren().addAll(tileCanvas, overlayCanvas, addModeBtn);
 
         setupZoomHandler();
+        setupClickHandler();
+        setupDragHandler();
 
         computeOffset();
         computeScreenCoords();
         loadTiles();
         drawOverlay();
+
+        ConsoleLogger.log("SYSTÈME", "Moteur Med-Map démarré avec " + doctors.size() + " centres.");
     }
 
-    // active le zoom / dézoom avec la molette de la souris
+    private void setupUI() {
+        addModeBtn = new Button("Mode : Sélection");
+        addModeBtn.setStyle("-fx-background-color: #2c3e50; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
+        addModeBtn.setLayoutX(MAP_W - 180);
+        addModeBtn.setLayoutY(20);
+
+        addModeBtn.setOnAction(e -> {
+            isAddMode = !isAddMode;
+            if (isAddMode) {
+                addModeBtn.setText("Mode : Ajout de Centre");
+                addModeBtn.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
+                selectedDoctor = null;
+                ConsoleLogger.log("UI", "Passage en mode AJOUT. Attente d'un clic sur la carte...");
+                drawOverlay();
+            } else {
+                addModeBtn.setText("Mode : Sélection");
+                addModeBtn.setStyle("-fx-background-color: #2c3e50; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
+                ConsoleLogger.log("UI", "Passage en mode SÉLECTION.");
+            }
+        });
+    }
+
+    private void setupClickHandler() {
+        overlayCanvas.setOnMouseClicked(event -> {
+            if (event.isStillSincePress()) {
+                double mouseX = event.getX();
+                double mouseY = event.getY();
+
+                if (isAddMode) {
+                    handlePointAddition(mouseX, mouseY);
+                } else {
+                    int nearestIndex = -1;
+                    double minDistSq = Double.MAX_VALUE;
+
+                    for (int i = 0; i < screenCoords.size(); i++) {
+                        double[] sc = screenCoords.get(i);
+                        double dx = sc[0] - mouseX;
+                        double dy = sc[1] - mouseY;
+                        double distSq = dx * dx + dy * dy;
+
+                        if (distSq < minDistSq) {
+                            minDistSq = distSq;
+                            nearestIndex = i;
+                        }
+                    }
+
+                    if (nearestIndex != -1 && selectedDoctor != doctors.get(nearestIndex)) {
+                        selectedDoctor = doctors.get(nearestIndex);
+                        ConsoleLogger.log("ACTION", "Sélection de la cellule : " + selectedDoctor.getName());
+                        drawOverlay();
+                    }
+                }
+            }
+        });
+    }
+
+    private void handlePointAddition(double mouseX, double mouseY) {
+        TextInputDialog dialog = new TextInputDialog("Nouveau Centre Médical");
+        dialog.setTitle("Ajouter un point d'accès");
+        dialog.setHeaderText(null);
+        dialog.setContentText("Nom du médecin ou du centre :");
+
+        Optional<String> result = dialog.showAndWait();
+        result.ifPresent(name -> {
+            double lat = pixelYToLat(mouseY);
+            double lng = pixelXToLng(mouseX);
+
+            doctors.add(new Doctor(name, lat, lng));
+            palette.add(Color.hsb(Math.random() * 360, 0.60, 0.90));
+
+            screenCoords.clear();
+            computeScreenCoords();
+
+            isAddMode = false;
+            addModeBtn.setText("Mode : Sélection");
+            addModeBtn.setStyle("-fx-background-color: #2c3e50; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
+
+            ConsoleLogger.log("DONNÉES", "Nouveau centre ajouté : " + name + " (Lat: " + String.format("%.4f", lat) + ", Lng: " + String.format("%.4f", lng) + ")");
+            ConsoleLogger.log("MOTEUR", "Recalcul complet du QuadEdge et du diagramme de Voronoï...");
+
+            drawOverlay();
+        });
+    }
+
+    private double pixelXToLng(double pxX) {
+        double worldPx = MapProjection.TILE_SIZE * (1 << zoom);
+        double absoluteX = pxX + offsetX;
+        return (absoluteX / worldPx) * 360.0 - 180.0;
+    }
+
+    private double pixelYToLat(double pxY) {
+        double worldPx = MapProjection.TILE_SIZE * (1 << zoom);
+        double absoluteY = pxY + offsetY;
+        double n = Math.PI - (2.0 * Math.PI * absoluteY) / worldPx;
+        return Math.toDegrees(Math.atan(Math.sinh(n)));
+    }
+
+    private void setupDragHandler() {
+        overlayCanvas.setOnMousePressed(event -> {
+            lastMouseX = event.getX();
+            lastMouseY = event.getY();
+        });
+
+        overlayCanvas.setOnMouseDragged(event -> {
+            double deltaX = event.getX() - lastMouseX;
+            double deltaY = event.getY() - lastMouseY;
+
+            offsetX -= deltaX;
+            offsetY -= deltaY;
+
+            lastMouseX = event.getX();
+            lastMouseY = event.getY();
+
+            screenCoords.clear();
+            computeScreenCoords();
+
+            drawOverlay();
+        });
+
+        overlayCanvas.setOnMouseReleased(event -> {
+            ConsoleLogger.log("VUE", "Déplacement de la carte terminé. Chargement des tuiles OSM...");
+            loadTiles();
+        });
+    }
+
     private void setupZoomHandler() {
         setOnScroll(event -> {
             if (event.getDeltaY() > 0) {
@@ -63,48 +210,37 @@ public class MapView extends Pane {
             } else if (event.getDeltaY() < 0) {
                 changeZoomAtMouse(-1, event.getX(), event.getY());
             }
-
             event.consume();
         });
     }
 
-    // change le niveau de zoom en gardant le point sous la souris au même endroit
     private void changeZoomAtMouse(int delta, double mouseX, double mouseY) {
         int oldZoom = zoom;
         int newZoom = zoom + delta;
 
-        // limites raisonnables pour éviter de trop charger les tuiles
-        if (newZoom < 11 || newZoom > 16) {
-            return;
-        }
+        if (newZoom < 11 || newZoom > 16) return;
 
-        // coordonnées monde du point sous la souris avant zoom
         double worldXBeforeZoom = offsetX + mouseX;
         double worldYBeforeZoom = offsetY + mouseY;
 
-        // facteur entre deux niveaux de zoom OpenStreetMap
         double scale = Math.pow(2, newZoom - oldZoom);
 
-        // coordonnées monde du même point après zoom
         double worldXAfterZoom = worldXBeforeZoom * scale;
         double worldYAfterZoom = worldYBeforeZoom * scale;
 
         zoom = newZoom;
-
-        // nouvel offset pour garder le même point sous la souris
         offsetX = worldXAfterZoom - mouseX;
         offsetY = worldYAfterZoom - mouseY;
 
-        // recalcul des positions écran
         screenCoords.clear();
         computeScreenCoords();
 
-        // recharge et redessine
+        ConsoleLogger.log("VUE", "Niveau de zoom modifié : " + zoom);
+
         loadTiles();
         drawOverlay();
     }
 
-    // centre la carte sur le barycentre des médecins
     private void computeOffset() {
         double avgLat = doctors.stream().mapToDouble(Doctor::getLat).average().orElse(49.0369);
         double avgLng = doctors.stream().mapToDouble(Doctor::getLng).average().orElse(2.0778);
@@ -113,7 +249,6 @@ public class MapView extends Pane {
         offsetY = MapProjection.latToPixelY(avgLat, zoom) - MAP_H / 2.0;
     }
 
-    // convertit les coordonnées GPS de chaque médecin en pixels écran
     private void computeScreenCoords() {
         for (Doctor d : doctors) {
             double sx = MapProjection.lngToPixelX(d.getLng(), zoom) - offsetX;
@@ -122,11 +257,9 @@ public class MapView extends Pane {
         }
     }
 
-    // chargement des tuiles OSM
     private void loadTiles() {
         GraphicsContext gc = tileCanvas.getGraphicsContext2D();
 
-        // fond neutre en attendant les tuiles
         gc.setFill(Color.web("#ddd8cc"));
         gc.fillRect(0, 0, MAP_W, MAP_H);
 
@@ -141,7 +274,6 @@ public class MapView extends Pane {
                 final double drawY = ty * MapProjection.TILE_SIZE - offsetY;
                 final String url = "https://tile.openstreetmap.org/" + zoom + "/" + tx + "/" + ty + ".png";
 
-                // thread dédié : HttpURLConnection avec User-Agent valide exigé par OSM
                 Thread t = new Thread(() -> {
                     try {
                         HttpURLConnection conn = (HttpURLConnection) new URI(url).toURL().openConnection();
@@ -152,17 +284,12 @@ public class MapView extends Pane {
 
                         try (InputStream is = conn.getInputStream()) {
                             Image tile = new Image(is);
-
-                            // retour sur le thread JavaFX pour dessiner
                             Platform.runLater(() -> {
-                                gc.drawImage(tile, drawX, drawY,
-                                        MapProjection.TILE_SIZE, MapProjection.TILE_SIZE);
+                                gc.drawImage(tile, drawX, drawY, MapProjection.TILE_SIZE, MapProjection.TILE_SIZE);
                                 drawOverlay();
                             });
                         }
-                    } catch (Exception e) {
-                        // tuile inaccessible : on ignore pour garder l'application stable
-                    }
+                    } catch (Exception e) { }
                 });
                 t.setDaemon(true);
                 t.start();
@@ -170,12 +297,10 @@ public class MapView extends Pane {
         }
     }
 
-    // dessine l'overlay
     private void drawOverlay() {
         GraphicsContext gc = overlayCanvas.getGraphicsContext2D();
         gc.clearRect(0, 0, MAP_W, MAP_H);
 
-        // clip : on ne dessine rien hors du canvas
         gc.save();
         gc.beginPath();
         gc.rect(0, 0, MAP_W, MAP_H);
@@ -187,17 +312,18 @@ public class MapView extends Pane {
         drawDelaunayEdges(gc, dv);
         drawMarkers(gc);
 
+        drawDeadZoneIndicator(gc);
+        drawInfoPanel(gc);
+
         gc.restore();
     }
 
-    // construit la triangulation de Delaunay
     private DelaunayVoronoi buildDelaunay() {
         double minX = screenCoords.stream().mapToDouble(c -> c[0]).min().orElse(0);
         double minY = screenCoords.stream().mapToDouble(c -> c[1]).min().orElse(0);
         double maxX = screenCoords.stream().mapToDouble(c -> c[0]).max().orElse(MAP_W);
         double maxY = screenCoords.stream().mapToDouble(c -> c[1]).max().orElse(MAP_H);
 
-        // marge généreuse pour que la bounding box englobe bien tous les points
         double margin = Math.max(maxX - minX, maxY - minY) * 0.6 + 300;
 
         DelaunayVoronoi dv = new DelaunayVoronoi();
@@ -210,45 +336,75 @@ public class MapView extends Pane {
         return dv;
     }
 
-    // remplit et contourne les polygones de Voronoï
     private void drawVoronoiRegions(GraphicsContext gc, DelaunayVoronoi dv) {
         List<Point[]> regions = dv.computeVoronoi();
+
+        maxVertexDistanceKm = 0.0;
+        furthestVertex = null;
+
+        if (selectedDoctor != null) {
+            int docIndex = doctors.indexOf(selectedDoctor);
+            selectedDocX = screenCoords.get(docIndex)[0];
+            selectedDocY = screenCoords.get(docIndex)[1];
+        }
 
         for (int i = 0; i < regions.size(); i++) {
             Point[] poly = regions.get(i);
             if (poly.length < 3 || hasInvalidCoords(poly)) continue;
+
+            if (selectedDoctor != null && isPointInPolygon(poly, selectedDocX, selectedDocY)) {
+                double maxDist = -1;
+                Point localFurthest = null;
+
+                for (Point p : poly) {
+                    double clampedX = Math.max(0, Math.min(MAP_W, p.getX()));
+                    double clampedY = Math.max(0, Math.min(MAP_H, p.getY()));
+
+                    double dist = calculateDistanceInKm(selectedDocX, selectedDocY, clampedX, clampedY, selectedDoctor.getLat(), zoom);
+                    if (dist > maxDist) {
+                        maxDist = dist;
+                        localFurthest = new Point(clampedX, clampedY, "Cible");
+                    }
+                }
+
+                if (maxVertexDistanceKm != maxDist) {
+                    maxVertexDistanceKm = maxDist;
+                    furthestVertex = localFurthest;
+
+                    ConsoleLogger.log("ANALYSE", "Distance critique calculée pour " + selectedDoctor.getName() + " : " + String.format("%.2f", maxVertexDistanceKm) + " km.");
+                    if (maxVertexDistanceKm > SEUIL_VIDE_ABSOLU_KM) {
+                        ConsoleLogger.log("ALERTE", "!!! VIDE ABSOLU DÉTECTÉ DANS CETTE ZONE !!!");
+                    }
+                }
+            }
 
             double[] xs = Arrays.stream(poly).mapToDouble(Point::getX).toArray();
             double[] ys = Arrays.stream(poly).mapToDouble(Point::getY).toArray();
 
             Color c = palette.get(i % palette.size());
 
-            // remplissage semi-transparent
             gc.setFill(c.deriveColor(0, 1, 1, 0.20));
             gc.fillPolygon(xs, ys, poly.length);
 
-            // contour de la cellule
             gc.setStroke(c.deriveColor(0, 1, 0.7, 0.80));
             gc.setLineWidth(1.8);
             gc.strokePolygon(xs, ys, poly.length);
         }
     }
 
-    // dessine les arêtes de la triangulation de Delaunay
     private void drawDelaunayEdges(GraphicsContext gc, DelaunayVoronoi dv) {
-        gc.setStroke(Color.rgb(50, 50, 180, 0.22));
-        gc.setLineWidth(0.9);
+        // Changement ici : on passe en Noir (0,0,0) avec une forte opacité (0.8)
+        gc.setStroke(Color.rgb(0, 0, 0, 0.8));
+        gc.setLineWidth(1.5); // Trait plus épais
         gc.setLineDashes(5, 4);
 
         for (Point[] edge : dv.computeEdges()) {
             gc.strokeLine(edge[0].getX(), edge[0].getY(),
                     edge[1].getX(), edge[1].getY());
         }
-
-        gc.setLineDashes(); // reset tirets
+        gc.setLineDashes();
     }
 
-    // dessine les marqueurs des médecins
     private void drawMarkers(GraphicsContext gc) {
         gc.setFont(Font.font("System", FontWeight.BOLD, 11));
 
@@ -257,18 +413,20 @@ public class MapView extends Pane {
             double sy   = screenCoords.get(i)[1];
             String name = doctors.get(i).getName();
 
+            boolean isSelected = (selectedDoctor != null && selectedDoctor.getName().equals(name));
+
             gc.setFill(Color.rgb(0, 0, 0, 0.18));
             gc.fillOval(sx - 6, sy - 5, 14, 14);
 
-            gc.setFill(Color.web("#e74c3c"));
+            gc.setFill(isSelected ? Color.web("#f1c40f") : Color.web("#e74c3c"));
             gc.fillOval(sx - 7, sy - 7, 14, 14);
 
             gc.setStroke(Color.WHITE);
-            gc.setLineWidth(2);
+            gc.setLineWidth(isSelected ? 3 : 2);
             gc.strokeOval(sx - 7, sy - 7, 14, 14);
 
             double labelW = name.length() * 6.3 + 12;
-            gc.setFill(Color.rgb(255, 255, 255, 0.88));
+            gc.setFill(Color.rgb(255, 255, 255, isSelected ? 0.95 : 0.88));
             gc.fillRoundRect(sx + 9, sy - 10, labelW, 17, 6, 6);
 
             gc.setFill(Color.web("#2c3e50"));
@@ -276,7 +434,108 @@ public class MapView extends Pane {
         }
     }
 
-    // vérifie qu'aucun sommet du polygone n'a de coordonnées invalides
+    // Dessine un viseur sur le point le plus éloigné (le vide absolu)
+    private void drawDeadZoneIndicator(GraphicsContext gc) {
+        if (selectedDoctor == null || furthestVertex == null || maxVertexDistanceKm == 0) return;
+
+        double vx = furthestVertex.getX();
+        double vy = furthestVertex.getY();
+
+        // 1. Calcul du rayon du cercle en pixels (distance entre le Vide et le Médecin)
+        double dx = vx - selectedDocX;
+        double dy = vy - selectedDocY;
+        double radiusPx = Math.sqrt(dx * dx + dy * dy);
+
+        // 2. NOUVEAU : Dessin du cercle circonscrit mathématique
+        // Ce cercle montre visuellement la zone totalement vide de tout médecin
+        gc.setStroke(Color.web("#c0392b", 0.4)); // Rouge transparent
+        gc.setLineWidth(2);
+        // fillOval / strokeOval prennent (x, y) du coin supérieur gauche, d'où le "- radiusPx"
+        gc.strokeOval(vx - radiusPx, vy - radiusPx, radiusPx * 2, radiusPx * 2);
+
+        // Remplissage léger du cercle pour bien montrer le "désert"
+        gc.setFill(Color.web("#e74c3c", 0.1));
+        gc.fillOval(vx - radiusPx, vy - radiusPx, radiusPx * 2, radiusPx * 2);
+
+        // 3. La ligne pointillée (le rayon)
+        gc.setStroke(Color.web("#c0392b"));
+        gc.setLineWidth(2);
+        gc.setLineDashes(6, 6);
+        gc.strokeLine(selectedDocX, selectedDocY, vx, vy);
+        gc.setLineDashes();
+
+        // 4. La cible sur le sommet
+        gc.setFill(Color.web("#e74c3c", 0.5));
+        gc.fillOval(vx - 15, vy - 15, 30, 30);
+
+        gc.setFill(Color.web("#c0392b"));
+        gc.fillOval(vx - 5, vy - 5, 10, 10);
+    }
+
+    private void drawInfoPanel(GraphicsContext gc) {
+        if (selectedDoctor == null) return;
+
+        double panelX = 20;
+        double panelY = 20;
+        double panelW = 400;
+        double panelH = 150;
+
+        gc.setFill(Color.rgb(0, 0, 0, 0.2));
+        gc.fillRoundRect(panelX + 2, panelY + 2, panelW, panelH, 10, 10);
+        gc.setFill(Color.rgb(255, 255, 255, 0.95));
+        gc.fillRoundRect(panelX, panelY, panelW, panelH, 10, 10);
+        gc.setStroke(Color.web("#34495e"));
+        gc.setLineWidth(2);
+        gc.strokeRoundRect(panelX, panelY, panelW, panelH, 10, 10);
+
+        gc.setFill(Color.web("#2c3e50"));
+        gc.setFont(Font.font("System", FontWeight.BOLD, 15));
+        gc.fillText(selectedDoctor.getName(), panelX + 15, panelY + 25);
+
+        gc.setStroke(Color.web("#bdc3c7"));
+        gc.setLineWidth(1);
+        gc.strokeLine(panelX + 10, panelY + 35, panelX + panelW - 10, panelY + 35);
+
+        gc.setFont(Font.font("System", FontWeight.NORMAL, 12));
+        gc.fillText("Latitude   : " + String.format("%.4f", selectedDoctor.getLat()), panelX + 15, panelY + 55);
+        gc.fillText("Longitude  : " + String.format("%.4f", selectedDoctor.getLng()), panelX + 15, panelY + 75);
+
+        if (maxVertexDistanceKm > 0) {
+            gc.setFill(Color.web("#2c3e50"));
+            gc.fillText(String.format("Distance au point le plus critique : %.2f km", maxVertexDistanceKm), panelX + 15, panelY + 100);
+
+            if (maxVertexDistanceKm > SEUIL_VIDE_ABSOLU_KM) {
+                gc.setFill(Color.web("#c0392b"));
+                gc.setFont(Font.font("System", FontWeight.BOLD, 12));
+                gc.fillText("▶ ALERTE : Le point ciblé est un Vide Absolu (Dead Zone)", panelX + 15, panelY + 125);
+            } else {
+                gc.setFill(Color.web("#27ae60"));
+                gc.setFont(Font.font("System", FontWeight.BOLD, 12));
+                gc.fillText("▶ Couverture maîtrisée (Aucun vide absolu détecté)", panelX + 15, panelY + 125);
+            }
+        }
+    }
+
+    private boolean isPointInPolygon(Point[] poly, double px, double py) {
+        boolean inside = false;
+        for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            if ((poly[i].getY() > py) != (poly[j].getY() > py) &&
+                    (px < (poly[j].getX() - poly[i].getX()) * (py - poly[i].getY()) / (poly[j].getY() - poly[i].getY()) + poly[i].getX())) {
+                inside = !inside;
+            }
+        }
+        return inside;
+    }
+
+    private double calculateDistanceInKm(double px1, double py1, double px2, double py2, double lat, int currentZoom) {
+        double dx = px2 - px1;
+        double dy = py2 - py1;
+        double pixelDist = Math.sqrt(dx * dx + dy * dy);
+
+        double metersPerPixel = 156543.034 * Math.cos(Math.toRadians(lat)) / Math.pow(2, currentZoom);
+        return (pixelDist * metersPerPixel) / 1000.0;
+    }
+
     private boolean hasInvalidCoords(Point[] poly) {
         for (Point p : poly) {
             if (Double.isNaN(p.getX()) || Double.isNaN(p.getY())
@@ -287,11 +546,15 @@ public class MapView extends Pane {
         return false;
     }
 
-    // génère les couleurs
     private List<Color> buildPalette(int n) {
+        String[] hexPalette = {
+                "#4285F4", "#EA4335", "#FBBC05", "#34A853", "#9C27B0",
+                "#00BCD4", "#FF9800", "#E91E63", "#3F51B5", "#8BC34A",
+                "#795548", "#607D8B", "#009688", "#FFEB3B", "#673AB7"
+        };
         List<Color> colors = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            colors.add(Color.hsb(360.0 * i / n, 0.55, 0.88));
+            colors.add(Color.web(hexPalette[i % hexPalette.length]));
         }
         return colors;
     }
