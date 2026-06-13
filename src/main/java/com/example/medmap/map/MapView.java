@@ -144,13 +144,13 @@ public class MapView extends Pane {
                 ConsoleLogger.log("UI", "Passage en mode SÉLECTION.");
             }
         });
-        generatePatientsBtn = new Button("Générer patients");
-        generatePatientsBtn.setStyle("-fx-background-color: #8e44ad; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
-        generatePatientsBtn.setLayoutX(MAP_W - 180);
-        generatePatientsBtn.setLayoutY(60);
+        PatientsBtn = new Button("Générer patients");
+        PatientsBtn.setStyle("-fx-background-color: #8e44ad; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
+        PatientsBtn.setLayoutX(MAP_W - 180);
+        PatientsBtn.setLayoutY(60);
 
-        generatePatientsBtn.setOnAction(e -> {
-            generateRandomPatients(30);
+        PatientsBtn.setOnAction(e -> {
+            RandomPatients(30);
         });
     }
 
@@ -510,20 +510,26 @@ public class MapView extends Pane {
     }
     
     private void generateRandomPatients(int count) {
-        for (int i = 0; i < count; i++) {
-            double lat = 48.90 + Math.random() * 0.25; // zone autour de Cergy / nord IDF
-            double lng = 1.95 + Math.random() * 0.35;
+	    for (int i = 0; i < count; i++) {
+	        // Center-weighted random distribution:
+	        // more patients near the center of the analysis area,
+	        // fewer patients near the edges.
+	        double centeredLatRatio = (Math.random() + Math.random()) / 2.0;
+	        double centeredLngRatio = (Math.random() + Math.random()) / 2.0;
+	
+	        double lat = IDF_MIN_LAT + centeredLatRatio * (IDF_MAX_LAT - IDF_MIN_LAT);
+	        double lng = IDF_MIN_LNG + centeredLngRatio * (IDF_MAX_LNG - IDF_MIN_LNG);
+	
+	        Patient patient = new Patient("P" + (patients.size() + 1), lat, lng);
+	        patients.add(patient);
+	    }	
 
-            Patient patient = new Patient("P" + (patients.size() + 1), lat, lng);
-            patients.add(patient);
-        }
+    assignPatientsToNearestDoctors();
+    computePatientScreenCoords();
 
-        assignPatientsToNearestDoctors();
-        computePatientScreenCoords();
-
-        ConsoleLogger.log("DATA", count + " patients generated and assigned to nearest doctors.");
-        drawOverlay();
-    }
+    ConsoleLogger.log("DATA", count + " patients added with center-weighted distribution.");
+    drawOverlay();
+	}
     
     private void assignPatientsToNearestDoctors() {
         for (Patient patient : patients) {
