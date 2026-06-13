@@ -1,6 +1,5 @@
 package com.example.medmap;
 
-import com.example.medmap.map.MapView;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
@@ -11,10 +10,11 @@ public class MedMapApplication extends Application {
 
     @Override
     public void start(Stage stage) {
-        MapView mapView = new MapView();
+        HomeScreen homeScreen = new HomeScreen(stage);
 
-        Scene scene = new Scene(mapView, 900, 700);
-        stage.setTitle("MedMap – Déserts médicaux – Cergy-Pontoise");
+        Scene scene = new Scene(homeScreen, 900, 700);
+
+        stage.setTitle("MedMap – Accueil");
         stage.setResizable(false);
         stage.setScene(scene);
         stage.show();
