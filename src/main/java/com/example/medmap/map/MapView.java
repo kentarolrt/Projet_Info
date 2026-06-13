@@ -15,6 +15,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import com.example.medmap.model.Patient;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -46,6 +47,9 @@ public class MapView extends Pane {
     private final List<Doctor>   doctors;
     private final List<double[]> screenCoords = new ArrayList<>();
     private final List<Color>    palette;
+    
+    private final List<Patient> patients = new ArrayList<>();
+    private final List<double[]> patientScreenCoords = new ArrayList<>();
 
     // variables interface et analyse
     private Doctor selectedDoctor = null;
@@ -60,6 +64,7 @@ public class MapView extends Pane {
     private double lastMouseY;
     private boolean isAddMode = false;
     private Button addModeBtn;
+    private Button generatePatientsBtn;
 
     private double offsetX;
     private double offsetY;
@@ -72,14 +77,14 @@ public class MapView extends Pane {
         setPrefSize(MAP_W, MAP_H);
 
         setupUI();
-        getChildren().addAll(tileCanvas, overlayCanvas, addModeBtn);
-
+        getChildren().addAll(tileCanvas, overlayCanvas, addModeBtn, generatePatientsBtn);
         setupZoomHandler();
         setupClickHandler();
         setupDragHandler();
 
         computeOffset();
         computeScreenCoords();
+        computePatientScreenCoords();
         loadTiles();
         drawOverlay();
 
@@ -135,6 +140,14 @@ public class MapView extends Pane {
                 ConsoleLogger.log("UI", "Passage en mode SÉLECTION.");
             }
         });
+        generatePatientsBtn = new Button("Générer patients");
+        generatePatientsBtn.setStyle("-fx-background-color: #8e44ad; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
+        generatePatientsBtn.setLayoutX(MAP_W - 180);
+        generatePatientsBtn.setLayoutY(60);
+
+        generatePatientsBtn.setOnAction(e -> {
+            generateRandomPatients(30);
+        });
     }
 
     private void setupClickHandler() {
@@ -185,9 +198,13 @@ public class MapView extends Pane {
             doctors.add(new Doctor(name, lat, lng));
             palette.add(Color.hsb(Math.random() * 360, 0.60, 0.90));
 
+            assignPatientsToNearestDoctors();
+
             screenCoords.clear();
             computeScreenCoords();
+            computePatientScreenCoords();
 
+            
             isAddMode = false;
             addModeBtn.setText("Mode : Sélection");
             addModeBtn.setStyle("-fx-background-color: #2c3e50; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
@@ -233,6 +250,7 @@ public class MapView extends Pane {
 
             screenCoords.clear();
             computeScreenCoords();
+            computePatientScreenCoords();
 
             drawOverlay();
         });
@@ -277,6 +295,7 @@ public class MapView extends Pane {
 
         screenCoords.clear();
         computeScreenCoords();
+        computePatientScreenCoords();
 
         ConsoleLogger.log("VUE", "Niveau de zoom modifié : " + zoom);
 
@@ -297,6 +316,16 @@ public class MapView extends Pane {
             double sx = MapProjection.lngToPixelX(d.getLng(), zoom) - offsetX;
             double sy = MapProjection.latToPixelY(d.getLat(), zoom) - offsetY;
             screenCoords.add(new double[]{sx, sy});
+        }
+    }
+    
+    private void computePatientScreenCoords() {
+        patientScreenCoords.clear();
+
+        for (Patient p : patients) {
+            double sx = MapProjection.lngToPixelX(p.getLng(), zoom) - offsetX;
+            double sy = MapProjection.latToPixelY(p.getLat(), zoom) - offsetY;
+            patientScreenCoords.add(new double[]{sx, sy});
         }
     }
 
@@ -353,12 +382,77 @@ public class MapView extends Pane {
 
         drawVoronoiRegions(gc, dv);
         drawDelaunayEdges(gc, dv);
+
+        drawPatientLinks(gc);
+        drawPatients(gc);
+
         drawMarkers(gc);
 
         drawDeadZoneIndicator(gc);
         drawInfoPanel(gc);
 
         gc.restore();
+    }
+    
+    private void generateRandomPatients(int count) {
+        for (int i = 0; i < count; i++) {
+            double lat = 48.90 + Math.random() * 0.25; // zone autour de Cergy / nord IDF
+            double lng = 1.95 + Math.random() * 0.35;
+
+            Patient patient = new Patient("P" + (patients.size() + 1), lat, lng);
+            patients.add(patient);
+        }
+
+        assignPatientsToNearestDoctors();
+        computePatientScreenCoords();
+
+        ConsoleLogger.log("DATA", count + " patients generated and assigned to nearest doctors.");
+        drawOverlay();
+    }
+    
+    private void assignPatientsToNearestDoctors() {
+        for (Patient patient : patients) {
+            Doctor nearestDoctor = findNearestDoctor(patient);
+            patient.setNearestDoctor(nearestDoctor);
+        }
+    }
+
+    private Doctor findNearestDoctor(Patient patient) {
+        Doctor nearestDoctor = null;
+        double bestDistance = Double.MAX_VALUE;
+
+        for (Doctor doctor : doctors) {
+            double distance = calculateGpsDistanceInKm(
+                    patient.getLat(),
+                    patient.getLng(),
+                    doctor.getLat(),
+                    doctor.getLng()
+            );
+
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                nearestDoctor = doctor;
+            }
+        }
+
+        return nearestDoctor;
+    }
+
+    private double calculateGpsDistanceInKm(double lat1, double lng1, double lat2, double lng2) {
+        final double earthRadiusKm = 6371.0;
+
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1))
+                * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2)
+                * Math.sin(dLng / 2);
+
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return earthRadiusKm * c;
     }
 
     private DelaunayVoronoi buildDelaunay() {
@@ -446,6 +540,46 @@ public class MapView extends Pane {
                     edge[1].getX(), edge[1].getY());
         }
         gc.setLineDashes();
+    }
+    
+    private void drawPatientLinks(GraphicsContext gc) {
+        gc.setStroke(Color.rgb(40, 40, 40, 0.25));
+        gc.setLineWidth(0.8);
+
+        for (int i = 0; i < patients.size(); i++) {
+            Patient patient = patients.get(i);
+            Doctor nearestDoctor = patient.getNearestDoctor();
+
+            if (nearestDoctor == null) continue;
+
+            int doctorIndex = doctors.indexOf(nearestDoctor);
+            if (doctorIndex < 0 || doctorIndex >= screenCoords.size()) continue;
+            if (i >= patientScreenCoords.size()) continue;
+
+            double patientX = patientScreenCoords.get(i)[0];
+            double patientY = patientScreenCoords.get(i)[1];
+
+            double doctorX = screenCoords.get(doctorIndex)[0];
+            double doctorY = screenCoords.get(doctorIndex)[1];
+
+            gc.strokeLine(patientX, patientY, doctorX, doctorY);
+        }
+    }
+    
+    private void drawPatients(GraphicsContext gc) {
+        for (int i = 0; i < patients.size(); i++) {
+            if (i >= patientScreenCoords.size()) continue;
+
+            double x = patientScreenCoords.get(i)[0];
+            double y = patientScreenCoords.get(i)[1];
+
+            gc.setFill(Color.rgb(0, 0, 0, 0.75));
+            gc.fillOval(x - 3, y - 3, 6, 6);
+
+            gc.setStroke(Color.WHITE);
+            gc.setLineWidth(1);
+            gc.strokeOval(x - 3, y - 3, 6, 6);
+        }
     }
 
     private void drawMarkers(GraphicsContext gc) {
