@@ -1,0 +1,61 @@
+Dr. Cergy-Préfecture;49.0369;2.0778
+Dr. Cergy-Saint-Christophe;49.0452;2.0613
+Dr. Pontoise;49.0505;2.1005
+Dr. Osny;49.062;2.06
+Dr. Vauréal;49.0319;2.0291
+Dr. Jouy-le-Moutier;49.0178;2.0378
+Dr. Menucourt;49.0275;1.9835
+Dr. Courdimanche;49.035;2.001
+Dr. Boisemont;49.0285;2.0012
+Dr. Éragny-sur-Oise;49.015;2.095
+Dr. Neuville-sur-Oise;49.0145;2.059
+Dr. Maurecourt;48.995;2.065
+Dr. Conflans-Sainte-Honorine;48.999;2.0945
+Dr. Magny-en-Vexin;49.1554;1.7865
+Dr. Paris-Centre (Hôtel-Dieu);48.8534;2.3488
+Dr. Paris-Nord (Bichat);48.8996;2.3323
+Dr. Paris-Sud (Cochin);48.8384;2.3396
+Dr. Paris-Est (Tenon);48.8659;2.4005
+Dr. Paris-Ouest (HEGP);48.8396;2.2731
+Dr. Versailles;48.8014;2.1301
+Dr. Mantes-la-Jolie;48.9907;1.7171
+Dr. Rambouillet;48.6492;1.8296
+Dr. Saint-Germain-en-Laye;48.8989;2.0938
+Dr. Poissy;48.9298;2.0436
+Dr. Trappes;48.7758;1.9926
+Dr. Plaisir;48.8179;1.9545
+Dr. Évry;48.6298;2.4418
+Dr. Corbeil-Essonnes;48.6139;2.482
+Dr. Massy;48.7307;2.2713
+Dr. Étampes;48.4346;2.1619
+Dr. Palaiseau;48.7145;2.2457
+Dr. Sainte-Geneviève-des-Bois;48.6385;2.3304
+Dr. Boulogne-Billancourt;48.8397;2.2399
+Dr. Nanterre;48.8924;2.2069
+Dr. Courbevoie;48.8973;2.2522
+Dr. Colombes;48.9229;2.2532
+Dr. Antony;48.7539;2.2975
+Dr. Montreuil;48.8623;2.4412
+Dr. Saint-Denis;48.9362;2.3574
+Dr. Aulnay-sous-Bois;48.9386;2.4905
+Dr. Aubervilliers;48.9131;2.3831
+Dr. Bobigny;48.9086;2.4397
+Dr. Créteil;48.7904;2.4556
+Dr. Vitry-sur-Seine;48.7876;2.3928
+Dr. Champigny-sur-Marne;48.8172;2.5153
+Dr. Villejuif;48.7925;2.3638
+Dr. Meaux;48.9596;2.8794
+Dr. Melun;48.54;2.6586
+Dr. Chelles;48.8824;2.5931
+Dr. Pontault-Combault;48.7981;2.6044
+Dr. Fontainebleau;48.4047;2.7016
+Dr. Provins;48.5604;3.299
+Dr. Nemours;48.2694;2.697
+Dr. Montereau-Fault-Yonne;48.3831;2.9515
+Dr. Dourdan;48.5283;2.0125
+Dr. Arpajon;48.5898;2.2486
+Dr. Milly-la-Forêt;48.4026;2.4697
+Dr. Brie-Comte-Robert;48.6925;2.6105
+Dr. Saint-Arnoult-en-Yvelines;48.5721;1.9332
+Dr. Coulommiers;48.815;3.0847
+Dr. Tournan-en-Brie;48.741;2.7667
