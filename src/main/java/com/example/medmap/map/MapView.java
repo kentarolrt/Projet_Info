@@ -29,7 +29,7 @@ import java.util.List;
 import java.util.Optional;
 
 public class MapView extends Pane {
-	private int zoom = 13;
+	private int zoom = 9;
 	private static final int MIN_ZOOM = 9;
 	private static final int MAX_ZOOM = 16;
 
@@ -417,11 +417,11 @@ public class MapView extends Pane {
     }
 
     private void computeOffset() {
-        double avgLat = doctors.stream().mapToDouble(Doctor::getLat).average().orElse(49.0369);
-        double avgLng = doctors.stream().mapToDouble(Doctor::getLng).average().orElse(2.0778);
+        double centerLat = (IDF_MIN_LAT + IDF_MAX_LAT) / 2.0;
+        double centerLng = (IDF_MIN_LNG + IDF_MAX_LNG) / 2.0;
 
-        offsetX = MapProjection.lngToPixelX(avgLng, zoom) - MAP_W / 2.0;
-        offsetY = MapProjection.latToPixelY(avgLat, zoom) - MAP_H / 2.0;
+        offsetX = MapProjection.lngToPixelX(centerLng, zoom) - MAP_W / 2.0;
+        offsetY = MapProjection.latToPixelY(centerLat, zoom) - MAP_H / 2.0;
     }
 
     private void computeScreenCoords() {
@@ -492,6 +492,8 @@ public class MapView extends Pane {
         gc.clip();
 
         DelaunayVoronoi dv = buildDelaunay();
+
+        drawStudyZone(gc);
 
         drawVoronoiRegions(gc, dv);
         drawDelaunayEdges(gc, dv);
@@ -606,9 +608,20 @@ public class MapView extends Pane {
                 double maxDist = -1;
                 Point localFurthest = null;
 
+                // Calcul des limites de l'IDF à l'écran
+                double zoneX1 = MapProjection.lngToPixelX(IDF_MIN_LNG, zoom) - offsetX;
+                double zoneX2 = MapProjection.lngToPixelX(IDF_MAX_LNG, zoom) - offsetX;
+                double zoneY1 = MapProjection.latToPixelY(IDF_MAX_LAT, zoom) - offsetY;
+                double zoneY2 = MapProjection.latToPixelY(IDF_MIN_LAT, zoom) - offsetY;
+
                 for (Point p : poly) {
-                    double clampedX = Math.clamp(p.getX(), 0, MAP_W);
-                    double clampedY = Math.clamp(p.getY(), 0, MAP_H);
+                    // Contrainte stricte aux frontières de l'Île-de-France
+                    double clampedX = Math.clamp(p.getX(), zoneX1, zoneX2);
+                    double clampedY = Math.clamp(p.getY(), zoneY1, zoneY2);
+
+                    // Sécurité pour la fenêtre
+                    clampedX = Math.clamp(clampedX, 0, MAP_W);
+                    clampedY = Math.clamp(clampedY, 0, MAP_H);
 
                     double dist = calculateDistanceInKm(selectedDocX, selectedDocY, clampedX, clampedY, selectedDoctor.getLat(), zoom);
                     if (dist > maxDist) {
@@ -802,6 +815,35 @@ public class MapView extends Pane {
                 gc.fillText("▶ Couverture maîtrisée (Aucun vide absolu détecté)", panelX + 15, panelY + 125);
             }
         }
+    }
+
+    // Dessine la zone limite d'analyse et grise l'extérieur de l'Île-de-France
+    private void drawStudyZone(GraphicsContext gc) {
+        double x1 = MapProjection.lngToPixelX(IDF_MIN_LNG, zoom) - offsetX;
+        double x2 = MapProjection.lngToPixelX(IDF_MAX_LNG, zoom) - offsetX;
+        double y1 = MapProjection.latToPixelY(IDF_MAX_LAT, zoom) - offsetY;
+        double y2 = MapProjection.latToPixelY(IDF_MIN_LAT, zoom) - offsetY;
+
+        double w = x2 - x1;
+        double h = y2 - y1;
+
+        // Ombrage
+        gc.setFill(Color.rgb(0, 0, 0, 0.35));
+        gc.fillRect(0, 0, MAP_W, y1);
+        gc.fillRect(0, y2, MAP_W, MAP_H - y2);
+        gc.fillRect(0, y1, x1, h);
+        gc.fillRect(x2, y1, MAP_W - x2, h);
+
+        // Frontière
+        gc.setStroke(Color.web("#e67e22"));
+        gc.setLineWidth(3);
+        gc.setLineDashes(10, 10);
+        gc.strokeRect(x1, y1, w, h);
+        gc.setLineDashes();
+
+        gc.setFill(Color.web("#e67e22"));
+        gc.setFont(Font.font("System", FontWeight.BOLD, 14));
+        gc.fillText("Limite territoriale d'analyse (Île-de-France)", x1 + 10, y1 + 20);
     }
 
     private boolean isPointInPolygon(Point[] poly, double px, double py) {
