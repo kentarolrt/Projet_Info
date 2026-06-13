@@ -6,47 +6,67 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Font;
-import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 
 public class HomeScreen extends VBox {
 
     public HomeScreen(Stage stage) {
         setAlignment(Pos.CENTER);
-        setSpacing(25);
         setPadding(new Insets(40));
+        getStyleClass().add("home-root");
+
+        VBox card = new VBox();
+        card.setAlignment(Pos.CENTER_LEFT);
+        card.setSpacing(22);
+        card.setPadding(new Insets(48));
+        card.getStyleClass().add("home-card");
+
+        Label badge = new Label("OUTIL D’AIDE À LA DÉCISION PUBLIQUE");
+        badge.getStyleClass().add("badge");
 
         Label title = new Label("MedMap");
-        title.setFont(Font.font("System", FontWeight.BOLD, 42));
+        title.getStyleClass().add("title");
 
-        Label subtitle = new Label("Visualisation des déserts médicaux");
-        subtitle.setFont(Font.font("System", FontWeight.NORMAL, 22));
+        Label subtitle = new Label("Cartographier les déserts médicaux");
+        subtitle.getStyleClass().add("subtitle");
 
         Label description = new Label(
-                "Cette application permet de visualiser les zones d'influence médicale\n"
-                        + "à l'aide du diagramme de Voronoï et de la triangulation de Delaunay.\n\n"
-                        + "Les médecins sont représentés par des points de référence.\n"
-                        + "Les zones colorées indiquent les territoires associés au médecin le plus proche."
+                "Analysez les zones d’influence médicale à partir des diagrammes de Voronoï "
+                        + "et de la triangulation de Delaunay.\n\n"
+                        + "Les médecins sont représentés par des points de référence. "
+                        + "Les patients sont rattachés au médecin le plus proche afin d’identifier "
+                        + "les zones de tension, de couverture ou de déséquilibre territorial."
         );
-        description.setFont(Font.font("System", 14));
-        description.setAlignment(Pos.CENTER);
         description.setWrapText(true);
-        description.setMaxWidth(650);
+        description.setMaxWidth(620);
+        description.getStyleClass().add("description");
+
+        HBox stats = new HBox(16);
+        stats.setAlignment(Pos.CENTER_LEFT);
+
+        VBox stat1 = createStat("Voronoï", "Zones d’influence");
+        VBox stat2 = createStat("Delaunay", "Analyse spatiale");
+        VBox stat3 = createStat("ARS", "Aide à la décision");
+
+        stats.getChildren().addAll(stat1, stat2, stat3);
+
+        HBox buttons = new HBox(14);
+        buttons.setAlignment(Pos.CENTER_LEFT);
 
         Button openMapButton = new Button("Ouvrir la carte");
-        openMapButton.setFont(Font.font("System", FontWeight.BOLD, 16));
-        openMapButton.setPrefWidth(220);
-        openMapButton.setPrefHeight(45);
+        openMapButton.getStyleClass().add("primary-button");
 
         Button quitButton = new Button("Quitter");
-        quitButton.setPrefWidth(220);
-        quitButton.setPrefHeight(35);
+        quitButton.getStyleClass().add("secondary-button");
+
+        buttons.getChildren().addAll(openMapButton, quitButton);
 
         openMapButton.setOnAction(event -> {
             MapView mapView = new MapView();
             Scene mapScene = new Scene(mapView, 900, 700);
+            mapScene.getStylesheets().add(getClass().getResource("/style.css").toExternalForm());
 
             stage.setTitle("MedMap – Déserts médicaux – Cergy-Pontoise");
             stage.setResizable(false);
@@ -55,6 +75,21 @@ public class HomeScreen extends VBox {
 
         quitButton.setOnAction(event -> stage.close());
 
-        getChildren().addAll(title, subtitle, description, openMapButton, quitButton);
+        card.getChildren().addAll(badge, title, subtitle, description, stats, buttons);
+        getChildren().add(card);
+    }
+
+    private VBox createStat(String title, String text) {
+        VBox box = new VBox(4);
+        box.getStyleClass().add("stat-card");
+
+        Label titleLabel = new Label(title);
+        titleLabel.getStyleClass().add("stat-title");
+
+        Label textLabel = new Label(text);
+        textLabel.getStyleClass().add("stat-text");
+
+        box.getChildren().addAll(titleLabel, textLabel);
+        return box;
     }
 }
