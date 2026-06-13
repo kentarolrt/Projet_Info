@@ -13,7 +13,9 @@ public class MedMapApplication extends Application {
         HomeScreen homeScreen = new HomeScreen(stage);
 
         Scene scene = new Scene(homeScreen, 900, 700);
-
+        scene.getStylesheets().add(getClass().getResource("/style.css").toExternalForm());
+        
+        
         stage.setTitle("MedMap – Accueil");
         stage.setResizable(false);
         stage.setScene(scene);
@@ -24,3 +26,4 @@ public class MedMapApplication extends Application {
         launch(args);
     }
 }
+
