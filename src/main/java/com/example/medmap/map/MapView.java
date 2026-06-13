@@ -25,10 +25,18 @@ import java.util.List;
 import java.util.Optional;
 
 public class MapView extends Pane {
-    // constantes
-    private int zoom = 13;
-    private static final double MAP_W = 900;
-    private static final double MAP_H = 700;
+	private int zoom = 13;
+	private static final int MIN_ZOOM = 9;
+	private static final int MAX_ZOOM = 16;
+
+	private static final double MAP_W = 900;
+	private static final double MAP_H = 700;
+
+	// Limites approximatives de l'Île-de-France
+	private static final double IDF_MIN_LAT = 48.05;
+	private static final double IDF_MAX_LAT = 49.25;
+	private static final double IDF_MIN_LNG = 1.40;
+	private static final double IDF_MAX_LNG = 3.60;
 
     // canvas
     private final Canvas tileCanvas    = new Canvas(MAP_W, MAP_H);
@@ -76,6 +84,35 @@ public class MapView extends Pane {
         drawOverlay();
 
         ConsoleLogger.log("SYSTÈME", "Moteur Med-Map démarré avec " + doctors.size() + " centres.");
+    }
+    
+ // empêche la carte de sortir trop loin de l'Île-de-France
+    private void clampOffsetToIleDeFrance() {
+        double minWorldX = MapProjection.lngToPixelX(IDF_MIN_LNG, zoom);
+        double maxWorldX = MapProjection.lngToPixelX(IDF_MAX_LNG, zoom);
+
+        // En projection Web Mercator, plus la latitude est au nord, plus Y est petit
+        double minWorldY = MapProjection.latToPixelY(IDF_MAX_LAT, zoom);
+        double maxWorldY = MapProjection.latToPixelY(IDF_MIN_LAT, zoom);
+
+        double minOffsetX = minWorldX;
+        double maxOffsetX = maxWorldX - MAP_W;
+
+        double minOffsetY = minWorldY;
+        double maxOffsetY = maxWorldY - MAP_H;
+
+        // Si la zone est plus petite que la fenêtre, on centre au lieu de bloquer bizarrement
+        if (minOffsetX > maxOffsetX) {
+            offsetX = (minWorldX + maxWorldX - MAP_W) / 2.0;
+        } else {
+            offsetX = Math.max(minOffsetX, Math.min(offsetX, maxOffsetX));
+        }
+
+        if (minOffsetY > maxOffsetY) {
+            offsetY = (minWorldY + maxWorldY - MAP_H) / 2.0;
+        } else {
+            offsetY = Math.max(minOffsetY, Math.min(offsetY, maxOffsetY));
+        }
     }
 
     private void setupUI() {
@@ -188,6 +225,9 @@ public class MapView extends Pane {
             offsetX -= deltaX;
             offsetY -= deltaY;
 
+            // bloque la carte dans la zone Île-de-France
+            clampOffsetToIleDeFrance();
+
             lastMouseX = event.getX();
             lastMouseY = event.getY();
 
@@ -200,6 +240,7 @@ public class MapView extends Pane {
         overlayCanvas.setOnMouseReleased(event -> {
             ConsoleLogger.log("VUE", "Déplacement de la carte terminé. Chargement des tuiles OSM...");
             loadTiles();
+            drawOverlay();
         });
     }
 
@@ -218,7 +259,7 @@ public class MapView extends Pane {
         int oldZoom = zoom;
         int newZoom = zoom + delta;
 
-        if (newZoom < 11 || newZoom > 16) return;
+        if (newZoom < MIN_ZOOM || newZoom > MAX_ZOOM) return;
 
         double worldXBeforeZoom = offsetX + mouseX;
         double worldYBeforeZoom = offsetY + mouseY;
@@ -231,6 +272,8 @@ public class MapView extends Pane {
         zoom = newZoom;
         offsetX = worldXAfterZoom - mouseX;
         offsetY = worldYAfterZoom - mouseY;
+
+        clampOffsetToIleDeFrance();
 
         screenCoords.clear();
         computeScreenCoords();
