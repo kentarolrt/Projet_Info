@@ -144,13 +144,13 @@ public class MapView extends Pane {
                 ConsoleLogger.log("UI", "Passage en mode SÉLECTION.");
             }
         });
-        PatientsBtn = new Button("Générer patients");
-        PatientsBtn.setStyle("-fx-background-color: #8e44ad; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
-        PatientsBtn.setLayoutX(MAP_W - 180);
-        PatientsBtn.setLayoutY(60);
+        generatePatientsBtn = new Button("Générer patients");
+        generatePatientsBtn.setStyle("-fx-background-color: #8e44ad; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15;");
+        generatePatientsBtn.setLayoutX(MAP_W - 180);
+        generatePatientsBtn.setLayoutY(60);
 
-        PatientsBtn.setOnAction(e -> {
-            RandomPatients(30);
+        generatePatientsBtn.setOnAction(e -> {
+            generateRandomPatients(30);
         });
     }
 
