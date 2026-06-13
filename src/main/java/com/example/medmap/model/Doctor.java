@@ -2,8 +2,8 @@ package com.example.medmap.model;
 
 public class Doctor {
     private final String name;
-    private final double lat;
-    private final double lng;
+    private double lat;
+    private double lng;
 
     // constructeur
     public Doctor(String name, double lat, double lng) {
@@ -15,4 +15,6 @@ public class Doctor {
     public String getName() { return name; }
     public double getLat()  { return lat; }
     public double getLng()  { return lng; }
+    public void setLat(double lat) { this.lat = lat; }
+    public void setLng(double lng) { this.lng = lng; }
 }

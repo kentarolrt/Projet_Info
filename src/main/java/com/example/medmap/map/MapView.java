@@ -15,6 +15,9 @@ import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.scene.input.MouseButton;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
 import com.example.medmap.model.Patient;
 
 import java.io.InputStream;
@@ -45,6 +48,7 @@ public class MapView extends Pane {
 
     // données
     private final List<Doctor>   doctors;
+    private Doctor movingDoctor = null;
     private final List<double[]> screenCoords = new ArrayList<>();
     private final List<Color>    palette;
     
@@ -71,7 +75,7 @@ public class MapView extends Pane {
 
     // constructeur
     public MapView() {
-        doctors = new ArrayList<>(DoctorData.getCergyDoctors());
+        doctors = new ArrayList<>(DoctorData.loadDoctors());
         palette = buildPalette(doctors.size());
 
         setPrefSize(MAP_W, MAP_H);
@@ -110,13 +114,13 @@ public class MapView extends Pane {
         if (minOffsetX > maxOffsetX) {
             offsetX = (minWorldX + maxWorldX - MAP_W) / 2.0;
         } else {
-            offsetX = Math.max(minOffsetX, Math.min(offsetX, maxOffsetX));
+            offsetX = Math.clamp(offsetX, minOffsetX, maxOffsetX);
         }
 
         if (minOffsetY > maxOffsetY) {
             offsetY = (minWorldY + maxWorldY - MAP_H) / 2.0;
         } else {
-            offsetY = Math.max(minOffsetY, Math.min(offsetY, maxOffsetY));
+            offsetY = Math.clamp(offsetY, minOffsetY, maxOffsetY);
         }
     }
 
@@ -152,16 +156,23 @@ public class MapView extends Pane {
 
     private void setupClickHandler() {
         overlayCanvas.setOnMouseClicked(event -> {
+            // On s'assure que la souris n'a pas bougé
             if (event.isStillSincePress()) {
                 double mouseX = event.getX();
                 double mouseY = event.getY();
 
+                // MODE AJOUT
                 if (isAddMode) {
-                    handlePointAddition(mouseX, mouseY);
-                } else {
+                    if (event.getButton() == MouseButton.PRIMARY) { // Clic gauche uniquement
+                        handlePointAddition(mouseX, mouseY);
+                    }
+                }
+                // MODE SÉLECTION / SUPPRESSION
+                else {
                     int nearestIndex = -1;
                     double minDistSq = Double.MAX_VALUE;
 
+                    // Recherche du centre le plus proche
                     for (int i = 0; i < screenCoords.size(); i++) {
                         double[] sc = screenCoords.get(i);
                         double dx = sc[0] - mouseX;
@@ -174,14 +185,68 @@ public class MapView extends Pane {
                         }
                     }
 
-                    if (nearestIndex != -1 && selectedDoctor != doctors.get(nearestIndex)) {
-                        selectedDoctor = doctors.get(nearestIndex);
-                        ConsoleLogger.log("ACTION", "Sélection de la cellule : " + selectedDoctor.getName());
-                        drawOverlay();
+                    if (nearestIndex != -1) {
+                        Doctor clickedDoctor = doctors.get(nearestIndex);
+
+                        if (event.getButton() == MouseButton.PRIMARY) {
+                            // CLIC GAUCHE : Sélection de la zone
+                            if (selectedDoctor != clickedDoctor) {
+                                selectedDoctor = clickedDoctor;
+                                ConsoleLogger.log("ACTION", "Sélection de la cellule : " + selectedDoctor.getName());
+                                drawOverlay();
+                            }
+                        } else if (event.getButton() == MouseButton.SECONDARY) {
+                            // CLIC DROIT : Suppression
+                            handlePointRemoval(clickedDoctor);
+                        }
                     }
                 }
             }
         });
+    }
+
+    // suppression d'un médecin
+    private void handlePointRemoval(Doctor doctorToRemove) {
+        // Sécurité géométrique : Delaunay a besoin de 3 points minimum !
+        if (doctors.size() <= 3) {
+            ConsoleLogger.log("ALERTE", "Impossible de supprimer : 3 centres minimum requis pour le calcul de Voronoï.");
+
+            Alert alert = new Alert(Alert.AlertType.WARNING);
+            alert.setTitle("Suppression impossible");
+            alert.setHeaderText(null);
+            alert.setContentText("La géométrie nécessite au minimum 3 points d'accès. Vous ne pouvez pas supprimer plus de centres.");
+            alert.showAndWait();
+            return;
+        }
+
+        // Boîte de dialogue de confirmation
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Supprimer un centre");
+        alert.setHeaderText(null);
+        alert.setContentText("Voulez-vous vraiment supprimer le centre : " + doctorToRemove.getName() + " ?");
+
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+
+            // 1. Retirer de la liste mémoire
+            doctors.remove(doctorToRemove);
+
+            // 2. Mettre à jour le fichier texte complet
+            DoctorData.saveAllDoctors(doctors);
+
+            // 3. Désélectionner si c'était la zone actuellement étudiée
+            if (selectedDoctor == doctorToRemove) {
+                selectedDoctor = null;
+            }
+
+            ConsoleLogger.log("DONNÉES", "Centre supprimé : " + doctorToRemove.getName());
+            ConsoleLogger.log("MOTEUR", "Recalcul de la carte après suppression...");
+
+            // 4. Mettre à jour les coordonnées écran et redessiner
+            screenCoords.clear();
+            computeScreenCoords();
+            drawOverlay();
+        }
     }
 
     private void handlePointAddition(double mouseX, double mouseY) {
@@ -195,9 +260,11 @@ public class MapView extends Pane {
             double lat = pixelYToLat(mouseY);
             double lng = pixelXToLng(mouseX);
 
-            doctors.add(new Doctor(name, lat, lng));
+            Doctor newDoctor = new Doctor(name, lat, lng);
+            doctors.add(newDoctor);
             palette.add(Color.hsb(Math.random() * 360, 0.60, 0.90));
 
+            DoctorData.appendDoctor(newDoctor);
             assignPatientsToNearestDoctors();
 
             screenCoords.clear();
@@ -233,31 +300,77 @@ public class MapView extends Pane {
         overlayCanvas.setOnMousePressed(event -> {
             lastMouseX = event.getX();
             lastMouseY = event.getY();
+
+            // On ne cherche à déplacer un docteur que si on est en mode Sélection et avec un clic gauche
+            if (!isAddMode && event.getButton() == MouseButton.PRIMARY) {
+                double mouseX = event.getX();
+                double mouseY = event.getY();
+
+                // On regarde si le clic est sur le marqueur d'un médecin (sensibilité de 15 pixels)
+                for (int i = 0; i < screenCoords.size(); i++) {
+                    double[] sc = screenCoords.get(i);
+                    double dx = sc[0] - mouseX;
+                    double dy = sc[1] - mouseY;
+                    double dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist <= 15) {
+                        movingDoctor = doctors.get(i);
+                        ConsoleLogger.log("ACTION", "Déplacement commencé pour : " + movingDoctor.getName());
+                        break;
+                    }
+                }
+            }
         });
 
         overlayCanvas.setOnMouseDragged(event -> {
-            double deltaX = event.getX() - lastMouseX;
-            double deltaY = event.getY() - lastMouseY;
+            if (movingDoctor != null) {
+                // Conversion des pixels de la souris en coordonnées GPS réelles
+                double newLng = pixelXToLng(event.getX());
+                double newLat = pixelYToLat(event.getY());
 
-            offsetX -= deltaX;
-            offsetY -= deltaY;
+                // maj de la position du docteur
+                movingDoctor.setLat(newLat);
+                movingDoctor.setLng(newLng);
 
-            // bloque la carte dans la zone Île-de-France
-            clampOffsetToIleDeFrance();
+                // Recalcul instantané des liaisons patients et des coordonnées écran
+                assignPatientsToNearestDoctors();
 
-            lastMouseX = event.getX();
-            lastMouseY = event.getY();
+                screenCoords.clear();
+                computeScreenCoords();
+                computePatientScreenCoords();
 
-            screenCoords.clear();
-            computeScreenCoords();
-            computePatientScreenCoords();
+                drawOverlay();
+            } else {
+                // déplacement de la carte
+                double deltaX = event.getX() - lastMouseX;
+                double deltaY = event.getY() - lastMouseY;
 
-            drawOverlay();
+                offsetX -= deltaX;
+                offsetY -= deltaY;
+
+                clampOffsetToIleDeFrance();
+
+                lastMouseX = event.getX();
+                lastMouseY = event.getY();
+
+                screenCoords.clear();
+                computeScreenCoords();
+                computePatientScreenCoords();
+
+                drawOverlay();
+            }
         });
 
         overlayCanvas.setOnMouseReleased(event -> {
-            ConsoleLogger.log("VUE", "Déplacement de la carte terminé. Chargement des tuiles OSM...");
-            loadTiles();
+            if (movingDoctor != null) {
+                // Quand on lâche le clic, on sauvegarde la nouvelle position dans le fichier texte !
+                DoctorData.saveAllDoctors(doctors);
+                ConsoleLogger.log("DONNÉES", "Nouvelle position sauvegardée pour : " + movingDoctor.getName());
+                movingDoctor = null; // On réinitialise
+            } else {
+                ConsoleLogger.log("VUE", "Déplacement de la carte terminé. Chargement des tuiles OSM...");
+                loadTiles();
+            }
             drawOverlay();
         });
     }
@@ -361,7 +474,7 @@ public class MapView extends Pane {
                                 drawOverlay();
                             });
                         }
-                    } catch (Exception e) { }
+                    } catch (Exception ignored) { }
                 });
                 t.setDaemon(true);
                 t.start();
@@ -494,8 +607,8 @@ public class MapView extends Pane {
                 Point localFurthest = null;
 
                 for (Point p : poly) {
-                    double clampedX = Math.max(0, Math.min(MAP_W, p.getX()));
-                    double clampedY = Math.max(0, Math.min(MAP_H, p.getY()));
+                    double clampedX = Math.clamp(p.getX(), 0, MAP_W);
+                    double clampedY = Math.clamp(p.getY(), 0, MAP_H);
 
                     double dist = calculateDistanceInKm(selectedDocX, selectedDocY, clampedX, clampedY, selectedDoctor.getLat(), zoom);
                     if (dist > maxDist) {
@@ -611,30 +724,28 @@ public class MapView extends Pane {
         }
     }
 
-    // Dessine un viseur sur le point le plus éloigné (le vide absolu)
+    // Dessine un viseur sur le point le plus éloigné
     private void drawDeadZoneIndicator(GraphicsContext gc) {
         if (selectedDoctor == null || furthestVertex == null || maxVertexDistanceKm == 0) return;
 
         double vx = furthestVertex.getX();
         double vy = furthestVertex.getY();
 
-        // 1. Calcul du rayon du cercle en pixels (distance entre le Vide et le Médecin)
+        // Calcul du rayon du cercle en pixels
         double dx = vx - selectedDocX;
         double dy = vy - selectedDocY;
         double radiusPx = Math.sqrt(dx * dx + dy * dy);
 
-        // 2. NOUVEAU : Dessin du cercle circonscrit mathématique
-        // Ce cercle montre visuellement la zone totalement vide de tout médecin
+        // Dessin du cercle circonscrit mathématique
         gc.setStroke(Color.web("#c0392b", 0.4)); // Rouge transparent
         gc.setLineWidth(2);
-        // fillOval / strokeOval prennent (x, y) du coin supérieur gauche, d'où le "- radiusPx"
         gc.strokeOval(vx - radiusPx, vy - radiusPx, radiusPx * 2, radiusPx * 2);
 
         // Remplissage léger du cercle pour bien montrer le "désert"
         gc.setFill(Color.web("#e74c3c", 0.1));
         gc.fillOval(vx - radiusPx, vy - radiusPx, radiusPx * 2, radiusPx * 2);
 
-        // 3. La ligne pointillée (le rayon)
+        // 3. Le rayon en pointillé
         gc.setStroke(Color.web("#c0392b"));
         gc.setLineWidth(2);
         gc.setLineDashes(6, 6);

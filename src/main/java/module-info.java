@@ -8,7 +8,6 @@ module com.example.medmap {
     exports com.example.medmap.model;
     exports com.example.medmap.algo;
     exports com.example.medmap.map;
-    exports application;
 
     opens com.example.medmap     to javafx.fxml;
     opens com.example.medmap.algo  to javafx.fxml;

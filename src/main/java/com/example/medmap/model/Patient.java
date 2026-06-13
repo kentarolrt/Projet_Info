@@ -1,14 +1,10 @@
 package com.example.medmap.model;
 
-/**
- * Represents a user point on the map.
- * In MedMap, a patient is linked to the nearest doctor.
- */
 public class Patient {
 
-    private String id;
-    private double lat;
-    private double lng;
+    private final String id;
+    private final double lat;
+    private final double lng;
     private Doctor nearestDoctor;
 
     public Patient(String id, double lat, double lng) {
